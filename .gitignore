@@ -1,0 +1,9 @@
+/venv
+.env
+.gcloudignore
+app.yaml
+.idea
+/static
+
+
+
