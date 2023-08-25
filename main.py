@@ -2,8 +2,6 @@ import datetime
 import requests
 import pytz
 import os
-import logging
-
 from heyoo import WhatsApp
 from dotenv import load_dotenv
 from flask import Flask, request, make_response, jsonify
@@ -53,23 +51,25 @@ def hook():
         return "Hello World"
     cnx = connect()
     data = request.get_json()
-    print("Received webhook data: %s", data)
+    print("Received webhook data: ", data)
+    print('In here Part 2')
     changed_field = messenger.changed_field(data)
     if changed_field == "messages":
+        print('In here Part 1')
         new_message = messenger.get_mobile(data)
         if new_message:
+            print('In here Part 2')
             mobile = messenger.get_mobile(data)
             if check_blacklist(cnx, mobile):
                 return 'OK', 200
+            print('In here Part 3')
             name = messenger.get_name(data)
-            time = messenger.get_message_timestamp(data)
             message_type = messenger.get_message_type(data)
             cust = Customer(name, mobile)
             print("In here part 4")
             print(f"New Message; sender:{mobile} name:{name} type:{message_type}")
             if message_type == "text":
                 message = messenger.get_message(data)
-                name = messenger.get_name(data)
                 print("Message: %s", message)
                 if message is not None:
                     message = message.lower()
@@ -78,31 +78,57 @@ def hook():
                             resp_id = '0A'
                             db_message_logger(cnx, message, resp_id, mobile)
                             messenger.send_message(
-                                f"Hi {cust.cust_name}!!! Welcome back to Cure and Care Physiotherapy. Hooghly Branch.\n Please visit our website http://www.cacprc.com",
+                                f"Hi {cust.cust_name}!!! Welcome back to Plumberwala.\n"
+                                f"Please Choose from the below option which best matches your need.",
                                 mobile)
+                            print('Before Sending Custom Interactive Message')
+                            messenger.send_message('Test Message', mobile)
                             send_custom_interactive_message(messenger, mobile, '0')
+                            return 'OK', 200
                         else:
+
                             resp_id = '0B'
                             db_message_logger(cnx, message, resp_id, mobile)
                             messenger.send_message(
-                                f"Hi {cust.cust_name}!!! Welcome to Cure and Care Physiotherapy. Hooghly Branch.\n Please visit our website http://www.cacprc.com"
-                                f"Please Enter your address to continue.", mobile)
-
+                                f"Hi {cust.cust_name}!!! Welcome to Plumbing wala. "
+                                f"Please choose from the below options to continue", mobile)
+                            print('Before Sending Custom Interactive Message')
+                            send_custom_interactive_message(messenger, mobile, '0')
+                            print('After Sending Custom Interactive Message')
+                            return 'OK', 200
                     else:
                         res = get_prev_resp_id(cnx, mobile)
                         if res is not None:
                             messenger.send_message("Hello World", mobile)
                         else:
-                            res = {0: 0}
                             messenger.send_message(
-                                f"Hello World",
-                                mobile)
+                                f"Hi {cust.cust_name},This is an automated whatsapp chatbot, please type Hi/HI/hi/hI to"
+                                f" start a conversation!", mobile)
                             return 'ok', 200
                         resp_id = '0C'
                         db_message_logger(cnx, message, resp_id, mobile)
                         messenger.send_message("Hello World", mobile)
-                    send_custom_interactive_message(messenger, mobile, 0)
+                    send_custom_interactive_message(messenger, mobile, '0')
+                    print('In here Part 8')
                     return 'ok', 200
+                print('In here Part 5')
+                return 'OK', 200
+            elif message_type == "interactive":
+                message_response = messenger.get_interactive_response(data)
+                intractive_type = message_response.get("type")
+                message_id = message_response[intractive_type]["id"]
+                message_text = message_response[intractive_type]["title"]
+                print(f"Interactive Message; {message_id}: {message_text}")
+                resp_id = message_id
+                message = message_text
+                db_message_logger(cnx, message_text, resp_id, mobile)
+                send_custom_interactive_message(messenger, mobile, resp_id, message)
+                # messenger.send_message(get_response(resp_id, message_text, cnx, cust), mobile)
+            else:
+                messenger.send_message(f"Oops!! Only text and interactive message supported", mobile)
+        else:
+            print('No New Message')
+    return 'OK', 200
 
 
 def connect():
@@ -120,6 +146,7 @@ class Customer:
     cust_address = None
     cust_email = None
     cust_category = None
+
     def __init__(self, cust_name, mobile, address=None):
         self.cust_name = cust_name
         self.mobile = mobile
@@ -133,8 +160,10 @@ class Customer:
                 result_one = cursor.fetchone()
                 if result_one is None:
                     print("In here part 1")
-                    sql = "INSERT INTO `Customer_Details` (`cust_name`, `phone_number`, `cust_address`,`InsertTS`) VALUES (%s, %s, %s, %s)"
-                    cursor.execute(sql, (self.cust_name, self.mobile, self.address, dt.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S'),))
+                    sql = "INSERT INTO `Customer_Details` (`cust_name`, `phone_number`, `cust_address`,`InsertTS`) " \
+                          "VALUES (%s, %s, %s, %s)"
+                    cursor.execute(sql, (self.cust_name, self.mobile, self.address, dt.now(ist_tz).
+                                         strftime('%Y-%m-%d %H:%M:%S'),))
                     cnx.commit()
                     return False
             except OperationalError as err:
@@ -225,6 +254,7 @@ def get_prev_resp_id(cnx, mobile):
             return None
         return res
 
+
 def check_blacklist(cnx, mobile):
     with cnx.cursor() as cursor:
         sql = "select count(*) from black_list_no where `black_phone_no` = %s"
@@ -236,7 +266,8 @@ def check_blacklist(cnx, mobile):
             return True
 
 
-def send_custom_interactive_message(messenger, mobile, resp_id):
+def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
+    print('Beginning of SCIM')
     payload = None
     if resp_id == '0':
         payload = {
@@ -248,134 +279,106 @@ def send_custom_interactive_message(messenger, mobile, resp_id):
                 "type": "list",
                 "header": {
                     "type": "text",
-                    "text": "Cure and Care Physiotherapy"
+                    "text": "Plumbing Wala"
                 },
                 "body": {
-                    "text": "Please choose from the below options."
+                    "text": "Please choose from below categories: "
                 },
                 "action": {
                     "button": "Options",
                     "sections": [
                         {
-                            "title": "Treatment Purpose",
+                            "title": "Pipes",
                             "rows": [
                                 {
                                     "id": "1A",
-                                    "title": "Orthopedic",
-                                    "description": "Service from 7 am to 7 pm, 7 days a week."
+                                    "title": "PVC Pipes"
                                 },
                                 {
                                     "id": "1B",
-                                    "title": "Neuro",
-                                    "description": "Service from 7 am to 7 pm, 7 days a week."
+                                    "title": "CPVC Pipes"
                                 },
                                 {
                                     "id": "1C",
-                                    "title": "Hydro / aqua",
-                                    "description": "Service from 7 am to 7 pm, 7 days a week."
-                                },
+                                    "title": "Other Pipes"
+                                }
+                            ]
+                        },
+                        {
+                            "title": "Fittings",
+                            "rows": [
                                 {
                                     "id": "1D",
-                                    "title": "Fitness and swimming",
-                                    "description": "Service from 7 am to 7 pm, 7 days a week."
+                                    "title": "CP Fittings"
                                 },
                                 {
                                     "id": "1E",
-                                    "title": "Paediatric Physiotherapy",
-                                    "description": "Service from 7 am to 7 pm, 7 days a week."
+                                    "title": "Bath Fittings"
+                                },
+                                {
+                                    "id": "1F",
+                                    "title": "Fittings"
                                 }
                             ]
                         },
                         {
-                            "title": "Academic Purpose",
+                            "title": "Others",
                             "rows": [
-                                # {
-                                #     "id": "2A",
-                                #     "title": "Free Course",
-                                #     "description": "APT"
-                                # },
+                                {
+                                    "id": "1G",
+                                    "title": "Water Tanks"
+                                },
+                                {
+                                    "id": "1H",
+                                    "title": "Other Plumbing Acc."
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    elif resp_id == '1A':
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": mobile,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "header": {
+                    "type": "text",
+                    "text": "Plumbing Wala"
+                },
+                "body": {
+                    "text": "Please choose from below Brands:"
+                },
+                "action": {
+                    "button": "Options",
+                    "sections": [
+                        {
+                            "title": "Brands",
+                            "rows": [
+                                {
+                                    "id": "2A",
+                                    "title": "Prince Pipes"
+                                },
                                 {
                                     "id": "2B",
-                                    "title": "Paid Course",
-                                    "description": "DPT Or BPT"
+                                    "title": "Supreme Pipes"
+                                },
+                                {
+                                    "id": "2C",
+                                    "title": "Other Economic Pipes"
                                 }
                             ]
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '1':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below options."
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "3A",
-                                "title": "Home Visit"
-                            }
                         },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "3B",
-                                "title": "Clinic Visit"
-                            }
-                        }
                     ]
                 }
             }
         }
-    elif resp_id == '2':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below options."
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "4A",
-                                "title": "With Surgery"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "4B",
-                                "title": "Without Surgery"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '3':
+    elif resp_id == '2A':
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -385,361 +388,131 @@ def send_custom_interactive_message(messenger, mobile, resp_id):
                 "type": "list",
                 "header": {
                     "type": "text",
-                    "text": "Cure and Care Physiotherapy"
+                    "text": "Plumbing Wala"
                 },
                 "body": {
-                    "text": "Please choose from the below dates."
+                    "text": "Please choose from below types:"
                 },
                 "action": {
-                    "button": "Choose Date",
+                    "button": "Options",
                     "sections": [
                         {
-                            "title": "Dates",
+                            "title": "Category",
                             "rows": [
                                 {
-                                    "id": "D1",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=1)).strftime(
-                                        '%Y-%m-%d')
-
+                                    "id": "3A",
+                                    "title": "SWR Pipes"
                                 },
                                 {
-                                    "id": "D2",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=2)).strftime(
-                                        '%Y-%m-%d')
+                                    "id": "3B",
+                                    "title": "UPVC Pipes"
                                 },
                                 {
-                                    "id": "D3",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=3)).strftime(
-                                        '%Y-%m-%d')
+                                    "id": "3C",
+                                    "title": "Agriculture Pipe"
                                 },
                                 {
-                                    "id": "D4",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=4)).strftime(
-                                        '%Y-%m-%d')
-                                },
-                                {
-                                    "id": "D5",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=5)).strftime(
-                                        '%Y-%m-%d')
-                                },
-                                {
-                                    "id": "D6",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=6)).strftime(
-                                        '%Y-%m-%d')
-                                },
-                                {
-                                    "id": "D7",
-                                    "title": (dt.now(ist_tz) + datetime.timedelta(days=7)).strftime(
-                                        '%Y-%m-%d')
+                                    "id": "3D",
+                                    "title": "Gutter Pipe"
                                 }
                             ]
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '4':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below time slots."
-                },
-                "action": {
-                    "button": "Choose Time",
-                    "sections": [
-                        {
-                            "title": "Time Slots",
-                            "rows": [
-                                {
-                                    "id": "T1",
-                                    "title": "7 a.m. - 9 a.m."
-
-                                },
-                                {
-                                    "id": "T2",
-                                    "title": "9 a.m. - 11 a.m."
-                                },
-                                {
-                                    "id": "T3",
-                                    "title": "11 a.m. - 1 p.m."
-                                },
-                                {
-                                    "id": "T4",
-                                    "title": "1 p.m. - 3 p.m."
-                                },
-                                {
-                                    "id": "T5",
-                                    "title": "3 p.m. - 5 p.m."
-                                },
-                                {
-                                    "id": "T6",
-                                    "title": "5 p.m. - 7 p.m."
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        }
-
-    elif resp_id == '5':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Do you want to confirm your booking ?"
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "5A",
-                                "title": "YES"
-                            }
                         },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "5B",
-                                "title": "NO"
-                            }
-                        }
                     ]
                 }
             }
         }
-    elif resp_id == '6':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below options."
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "6A",
-                                "title": "Morning Slot"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "6B",
-                                "title": "Evening Slot"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '7':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Paid Course Details:"
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "7A",
-                                "title": "DPT"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "7B",
-                                "title": "BPT"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '8':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below time slots."
-                },
-                "action": {
-                    "button": "Choose Time",
-                    "sections": [
-                        {
-                            "title": "Time Slots",
-                            "rows": [
-                                {
-                                    "id": "HT01",
-                                    "title": "7 a.m. - 8 a.m."
-                                },
-                                {
-                                    "id": "HT02",
-                                    "title": "8 a.m. - 9 a.m."
-                                },
-                                {
-                                    "id": "HT03",
-                                    "title": "9 a.m. - 10 a.m."
-                                },
-                                {
-                                    "id": "HT04",
-                                    "title": "10 a.m. - 11 a.m."
-                                },
-                                {
-                                    "id": "HT05",
-                                    "title": "11 a.m. - 12 p.m."
-                                },
-                                {
-                                    "id": "HT06",
-                                    "title": "12 p.m. - 1 p.m."
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '9':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose from the below time slots."
-                },
-                "action": {
-                    "button": "Choose Time",
-                    "sections": [
-                        {
-                            "title": "Time Slots",
-                            "rows": [
-                                {
-                                    "id": "HT07",
-                                    "title": "1 p.m. - 2 p.m."
-                                },
-                                {
-                                    "id": "HT08",
-                                    "title": "2 p.m. - 3 p.m."
-                                },
-                                {
-                                    "id": "HT09",
-                                    "title": "3 p.m. - 4 p.m."
-                                },
-                                {
-                                    "id": "HT10",
-                                    "title": "4 p.m. - 5 p.m."
-                                },
-                                {
-                                    "id": "HT11",
-                                    "title": "5 p.m. - 6 p.m."
-                                },
-                                {
-                                    "id": "HT12",
-                                    "title": "6 p.m. - 7 p.m."
-                                },
-                                {
-                                    "id": "HT13",
-                                    "title": "7 p.m. - 8 p.m."
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        }
-    elif resp_id == '10':
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": mobile,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "header": {
-                    "type": "text",
-                    "text": "Cure and Care Physiotherapy"
-                },
-                "body": {
-                    "text": "Please choose your preferred mode:"
-                },
-                "action": {
-                    "buttons": [
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "9A",
-                                "title": "Online"
-                            }
-                        },
-                        {
-                            "type": "reply",
-                            "reply": {
-                                "id": "9B",
-                                "title": "Offline"
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-
+    elif resp_id == '4A' or resp_id == '4B' or resp_id == '4C' or resp_id == '4D':
+        messenger.send_message("Please Enter the Quantity", mobile)
+        cnx = connect()
+        db_message_logger(cnx, message, "5A", mobile)
+        return None
+    print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
+    print('Request sent in send custom interactive message')
     return None
+
+
+def fetch_cart_no(cust):
+    cnx = connect()
+    with cnx.cursor() as cursor:
+        try:
+            sql = "SELECT *  FROM `Customer_Details` " \
+                  "WHERE phone_number = %s AND order_id = (select max(order_id) from `Customer_Details` where " \
+                  "phone_number = %s and order_stat = 'P')"
+            cursor.execute(sql, (cust.mobile, cust.mobile))
+            result = cursor.fetchone()
+        except OperationalError as err:
+            print(str(err))
+            return None
+        except Exception as e:
+            print("Exception occurred : " + str(e))
+            return None
+        return result
+
+
+class Order:
+
+    cart_no = None
+    phone_number = None
+    category = None
+    cust = None
+
+    # def __init__(self, phone_number):
+    #     self.phone_number = phone_number
+    #     cnx = connect()
+    #     with cnx.cursor() as cursor:
+    #         sql = f"select "
+
+    def __init__(self, phone_number, category, cust):
+        self.phone_number = phone_number
+        self.category = category
+        self.cust = cust
+
+    def create_order_line(self):
+        cnx = connect()
+        with cnx.cursor() as cursor:
+            try:
+                sql = f"insert into `order_log` (`cart_no`,`phone_no`, `order_cat`, `order_stat`) " \
+                      f"values ({},{self.phone_number}, {self.category}, 'O')"
+                cursor.execute(sql)
+                cnx.commit()
+            except OperationalError as err:
+                print(str(err))
+                return None
+            except Exception as e:
+                print("Exception occurred : " + str(e))
+                return None
+        return None
+
+    def update_order_line_details(self, col_name, col_val):
+        cnx = connect()
+        with cnx.cursor() as cursor:
+            try:
+                sql = f"update order_log set {col_name} = {col_val} where phone_number = {self.phone_number}"
+                cursor.execute(sql)
+                cnx.commit()
+            except OperationalError as err:
+                print(str(err))
+                return None
+            except Exception as e:
+                print("Exception occurred : " + str(e))
+                return None
+        return None
+
+    def confirm_order(self):
+        cnx = connect()
+        with cnx.cursor() as cursor:
+            try:
+                sql = f"update `order_log` set order_stat = 'P' where order_no = {self.order_no} and "
+                cursor.execute(sql)
+                cnx.commit()
+            except OperationalError as err:
+                print(str(err))
+                return None
+            except Exception as e:
+                print("Exception occurred : " + str(e))
+                return None
+        return None
 
 
 if __name__ == '__main__':
