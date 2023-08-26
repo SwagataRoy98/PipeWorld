@@ -10,6 +10,7 @@ from flask_cors import CORS, cross_origin
 from flask_mail import Mail, Message
 import pymysql
 from pymysql import OperationalError
+
 import re
 from werkzeug.utils import secure_filename, escape
 app = Flask(__name__)
@@ -432,14 +433,14 @@ def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
     return None
 
 
-def fetch_cart_no(cust):
+def fetch_order_no(cust):
     cnx = connect()
     with cnx.cursor() as cursor:
         try:
-            sql = "SELECT *  FROM `Customer_Details` " \
-                  "WHERE phone_number = %s AND order_id = (select max(order_id) from `Customer_Details` where " \
-                  "phone_number = %s and order_stat = 'P')"
-            cursor.execute(sql, (cust.mobile, cust.mobile))
+            sql = "SELECT order_no, order_id  FROM `order_log` " \
+                  "WHERE phone_number = %s AND order_id = (select max(order_id) from `order_log` where " \
+                  "phone_number = %s and order_stat = 'A')"
+            cursor.execute(sql, (cust.phone_no, cust.phone_no))
             result = cursor.fetchone()
         except OperationalError as err:
             print(str(err))
@@ -447,12 +448,34 @@ def fetch_cart_no(cust):
         except Exception as e:
             print("Exception occurred : " + str(e))
             return None
-        return result
+        return result[0]
+
+
+def get_order_no(cnx):
+    with cnx.cursor() as cursor:
+        try:
+            sql = f"select max(seq_id) from order_log where order_stat = 'F'"
+            cursor.execute(sql)
+            result = cursor.fetchone()
+            print(type(result[0]))
+            if result[0] is not None:
+                order_no = 100000 + int(result[0]) + 1
+                order_no = 'ON' + str(order_no)
+            else:
+                order_no = 'ON100001'
+        except OperationalError as err:
+            print(str(err))
+            return None
+        except Exception as e:
+            print("Exception occurred : " + str(e))
+            return None
+        return order_no
 
 
 class Order:
 
-    cart_no = None
+    order_no = None
+    invoice_no = None
     phone_number = None
     category = None
     cust = None
@@ -467,13 +490,43 @@ class Order:
         self.phone_number = phone_number
         self.category = category
         self.cust = cust
+        cnx = connect()
+        prev_order = fetch_order_no(self.cust)
+        if prev_order is None:
+            self.order_no = get_order_no(cnx)
+        else:
+            self.order_no = prev_order[0]
+        self.invoice_no = self.order_no+'_'+prev_order[1]
+
+    def calculate_grand_total(self):
+        cnx = connect()
+        with cnx.cursor() as cursor:
+            try:
+                sql = f"select order_type, order_comp, order_cat, order_sub_cat, order_size from order_log " \
+                      f"where order_stat = 'A' and phone_number = {self.phone_number}"
+                cursor.execute(sql)
+                orders = cursor.fetchall()
+                print(type(orders))
+                print(orders)
+                total_price = 0
+                for order in orders:
+                    product = Product(product_type=order[0], product_cat=order[2], product_comp=order[1],
+                                      product_sub_cat=order[3], product_size= order[4])
+                    total_price = total_price + product.get_prod_price()
+                return total_price
+            except OperationalError as err:
+                print(str(err))
+                return None
+            except Exception as e:
+                print("Exception occurred : " + str(e))
+                return None
 
     def create_order_line(self):
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"insert into `order_log` (`cart_no`,`phone_no`, `order_cat`, `order_stat`) " \
-                      f"values ({},{self.phone_number}, {self.category}, 'O')"
+                sql = f"insert into `order_log` (`order_no`,`invoice_no`,`phone_no`, `order_cat`, `order_stat`) " \
+                      f"values ({self.order_no},{self.invoice_no},{self.phone_number}, {self.category}, 'A')"
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -488,7 +541,9 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"update order_log set {col_name} = {col_val} where phone_number = {self.phone_number}"
+                sql = f"update order_log set {col_name} = {col_val} where " \
+                      f"order_id = (select max(order_id) from `order_log` where phone_number = {self.phone_number} " \
+                      f"and order_stat = 'A')"
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -503,7 +558,8 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"update `order_log` set order_stat = 'P' where order_no = {self.order_no} and "
+                sql = f"update `order_log` set order_stat = 'F' where phone_number = {self.phone_number} and " \
+                      f"order_stat = 'A'"
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -513,6 +569,42 @@ class Order:
                 print("Exception occurred : " + str(e))
                 return None
         return None
+
+
+class Product:
+    product_type = None
+    product_cat = None
+    product_comp = None
+    product_sub_cat = None
+    product_size = None
+
+    def __init__(self, product_type, product_cat, product_comp, product_sub_cat, product_size):
+        self.product_type = product_type
+        self.product_cat = product_cat
+        self.product_comp = product_comp
+        self.product_sub_cat = product_sub_cat
+        self.product_size = product_size
+
+    def get_prod_price(self):
+        cnx = connect()
+        with cnx.cursor() as cursor:
+            try:
+                sql = f"select prod_price from `prod_table` where prod_type = {self.product_type} " \
+                      f"and prod_cat = {self.product_cat} " \
+                      f"and prod_sub_cat = {self.product_sub_cat} " \
+                      f"and prod_comp = {self.product_comp} " \
+                      f"and prod_size = {self.product_size} "
+                cursor.execute(sql)
+                result = cursor.fetchone()
+                print(type(result))
+                print(result[0])
+                return result[0]
+            except OperationalError as err:
+                print(str(err))
+                return None
+            except Exception as e:
+                print("Exception occurred : " + str(e))
+                return None
 
 
 if __name__ == '__main__':
