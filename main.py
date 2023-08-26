@@ -84,7 +84,7 @@ def hook():
                                 mobile)
                             print('Before Sending Custom Interactive Message')
                             messenger.send_message('Test Message', mobile)
-                            send_custom_interactive_message(messenger, mobile, '0')
+                            send_custom_interactive_message(messenger, cust, '0')
                             return 'OK', 200
                         else:
 
@@ -94,7 +94,7 @@ def hook():
                                 f"Hi {cust.cust_name}!!! Welcome to Plumbing wala. "
                                 f"Please choose from the below options to continue", mobile)
                             print('Before Sending Custom Interactive Message')
-                            send_custom_interactive_message(messenger, mobile, '0')
+                            send_custom_interactive_message(messenger, cust, '0')
                             print('After Sending Custom Interactive Message')
                             return 'OK', 200
                     else:
@@ -109,7 +109,7 @@ def hook():
                         resp_id = '0C'
                         db_message_logger(cnx, message, resp_id, mobile)
                         messenger.send_message("Hello World", mobile)
-                    send_custom_interactive_message(messenger, mobile, '0')
+                    send_custom_interactive_message(messenger, cust, '0')
                     print('In here Part 8')
                     return 'ok', 200
                 print('In here Part 5')
@@ -123,7 +123,7 @@ def hook():
                 resp_id = message_id
                 message = message_text
                 db_message_logger(cnx, message_text, resp_id, mobile)
-                send_custom_interactive_message(messenger, mobile, resp_id, message)
+                send_custom_interactive_message(messenger, cust, resp_id, message)
                 # messenger.send_message(get_response(resp_id, message_text, cnx, cust), mobile)
             else:
                 messenger.send_message(f"Oops!! Only text and interactive message supported", mobile)
@@ -148,21 +148,23 @@ class Customer:
     cust_email = None
     cust_category = None
 
-    def __init__(self, cust_name, mobile, address=None):
+    def __init__(self, cust_name, phone_number, address=None):
         self.cust_name = cust_name
-        self.mobile = mobile
+        self.phone_number = phone_number
         self.address = address
 
     def service_cust_ins(self, cnx):
         with cnx.cursor() as cursor:
             try:
                 sql = "SELECT * FROM `Customer_Details` WHERE `phone_number`= %s"
+                print(sql)
                 cursor.execute(sql, self.mobile)
                 result_one = cursor.fetchone()
                 if result_one is None:
                     print("In here part 1")
                     sql = "INSERT INTO `Customer_Details` (`cust_name`, `phone_number`, `cust_address`,`InsertTS`) " \
                           "VALUES (%s, %s, %s, %s)"
+                    print(sql)
                     cursor.execute(sql, (self.cust_name, self.mobile, self.address, dt.now(ist_tz).
                                          strftime('%Y-%m-%d %H:%M:%S'),))
                     cnx.commit()
@@ -179,12 +181,14 @@ class Customer:
         with cnx.cursor() as cursor:
             try:
                 sql = "SELECT * FROM `Customer_Details` WHERE `phone_number`= %s"
-                cursor.execute(sql, self.mobile)
+                print(sql)
+                cursor.execute(sql, self.phone_number)
                 result_one = cursor.fetchone()
                 if result_one is None:
                     print("In here part 1")
                     sql = "INSERT INTO `Customer_Details` (`cust_name`, `phone_number`,`insertts`) VALUES (%s, %s, %s)"
-                    cursor.execute(sql, (self.cust_name, self.mobile, dt.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S'),))
+                    print(sql)
+                    cursor.execute(sql, (self.cust_name, self.phone_number, dt.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S'),))
                     cnx.commit()
                     return False
             except OperationalError as err:
@@ -200,6 +204,7 @@ class Customer:
         with cnx.cursor() as cursor:
             try:
                 sql = "UPDATE Customer_Details SET cust_address = %s where phone_number = %s"
+                print(sql)
                 cursor.execute(sql, (self.address, self.mobile))
             except OperationalError as err:
                 print(str(err))
@@ -214,6 +219,7 @@ class Customer:
         with cnx.cursor() as cursor:
             try:
                 sql = "UPDATE Customer_Details SET company_name = %s where phone_number = %s"
+                print(sql)
                 cursor.execute(sql, (self.company_name, self.mobile))
             except OperationalError as err:
                 print(str(err))
@@ -228,6 +234,7 @@ def db_message_logger(cnx, message, resp_id, mobile):
     with cnx.cursor() as cursor:
         try:
             sql = "INSERT INTO `chat_log` (`phone_number`, `chat_desc`, `res_id`, `insertts`) values (%s, %s, %s, %s)"
+            print(sql)
             cursor.execute(sql, (mobile, message, resp_id, dt.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S'),))
             cnx.commit()
 
@@ -245,6 +252,7 @@ def get_prev_resp_id(cnx, mobile):
         try:
             sql = "select `res_id`,`chat_desc` from `chat_log` where `phone_number` = %s and `log_id` = " \
                   "(select max(`log_id`) from `chat_log` where `phone_number` = %s)"
+            print(sql)
             cursor.execute(sql, (mobile, mobile))
             res = cursor.fetchone()
         except OperationalError as err:
@@ -259,6 +267,7 @@ def get_prev_resp_id(cnx, mobile):
 def check_blacklist(cnx, mobile):
     with cnx.cursor() as cursor:
         sql = "select count(*) from black_list_no where `black_phone_no` = %s"
+        print(sql)
         cursor.execute(sql, mobile)
         res = cursor.fetchone()
         if res[0] == 0:
@@ -267,14 +276,14 @@ def check_blacklist(cnx, mobile):
             return True
 
 
-def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
+def send_custom_interactive_message(messenger, cust, resp_id, message=None):
     print('Beginning of SCIM')
     payload = None
     if resp_id == '0':
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": mobile,
+            "to": cust.phone_number,
             "type": "interactive",
             "interactive": {
                 "type": "list",
@@ -340,11 +349,13 @@ def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
             }
         }
     elif resp_id == '1A':
-
+        print('')
+        order = Order(phone_number=cust.phone_number, cust=cust, order_type=message)
+        order.create_order_line()
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": mobile,
+            "to": cust.phone_number,
             "type": "interactive",
             "interactive": {
                 "type": "list",
@@ -380,10 +391,12 @@ def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
             }
         }
     elif resp_id == '2A':
+        order = Order(phone_number=cust.phone_number, cust=cust)
+        order.update_order_line_details('order_comp', message)
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": mobile,
+            "to": cust.phone_number,
             "type": "interactive",
             "interactive": {
                 "type": "list",
@@ -422,10 +435,15 @@ def send_custom_interactive_message(messenger, mobile, resp_id, message=None):
                 }
             }
         }
-    elif resp_id == '4A' or resp_id == '4B' or resp_id == '4C' or resp_id == '4D':
-        messenger.send_message("Please Enter the Quantity", mobile)
+    elif re.match(r'^3', resp_id):
+        messenger.send_message("Please Enter the Quantity", cust.phone_number)
         cnx = connect()
-        db_message_logger(cnx, message, "5A", mobile)
+        db_message_logger(cnx, message, "5A", cust.phone_number)
+        return None
+    elif resp_id == '4A' or resp_id == '4B' or resp_id == '4C' or resp_id == '4D':
+        messenger.send_message("Please Enter the Quantity", cust.phone_number)
+        cnx = connect()
+        db_message_logger(cnx, message, "5A", cust.phone_number)
         return None
     print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
@@ -440,21 +458,25 @@ def fetch_order_no(cust):
             sql = "SELECT order_no, order_id  FROM `order_log` " \
                   "WHERE phone_number = %s AND order_id = (select max(order_id) from `order_log` where " \
                   "phone_number = %s and order_stat = 'A')"
-            cursor.execute(sql, (cust.phone_no, cust.phone_no))
+            print(sql)
+            cursor.execute(sql, (cust.phone_number, cust.phone_number))
             result = cursor.fetchone()
+            if result is None:
+                result = [get_order_no(cnx), '01']
         except OperationalError as err:
             print(str(err))
             return None
         except Exception as e:
             print("Exception occurred : " + str(e))
             return None
-        return result[0]
+        return result
 
 
 def get_order_no(cnx):
     with cnx.cursor() as cursor:
         try:
-            sql = f"select max(seq_id) from order_log where order_stat = 'F'"
+            sql = f"select max(order_id) from order_log where order_stat = 'F'"
+            print(sql)
             cursor.execute(sql)
             result = cursor.fetchone()
             print(type(result[0]))
@@ -477,18 +499,17 @@ class Order:
     order_no = None
     invoice_no = None
     phone_number = None
-    category = None
     cust = None
-
+    order_type = None
     # def __init__(self, phone_number):
     #     self.phone_number = phone_number
     #     cnx = connect()
     #     with cnx.cursor() as cursor:
     #         sql = f"select "
 
-    def __init__(self, phone_number, category, cust):
+    def __init__(self, phone_number, cust, order_type=None):
         self.phone_number = phone_number
-        self.category = category
+        self.order_type = order_type
         self.cust = cust
         cnx = connect()
         prev_order = fetch_order_no(self.cust)
@@ -496,7 +517,7 @@ class Order:
             self.order_no = get_order_no(cnx)
         else:
             self.order_no = prev_order[0]
-        self.invoice_no = self.order_no+'_'+prev_order[1]
+        self.invoice_no = self.order_no+'_' + str(prev_order[1])
 
     def calculate_grand_total(self):
         cnx = connect()
@@ -504,6 +525,7 @@ class Order:
             try:
                 sql = f"select order_type, order_comp, order_cat, order_sub_cat, order_size from order_log " \
                       f"where order_stat = 'A' and phone_number = {self.phone_number}"
+                print(sql)
                 cursor.execute(sql)
                 orders = cursor.fetchall()
                 print(type(orders))
@@ -511,7 +533,7 @@ class Order:
                 total_price = 0
                 for order in orders:
                     product = Product(product_type=order[0], product_cat=order[2], product_comp=order[1],
-                                      product_sub_cat=order[3], product_size= order[4])
+                                      product_sub_cat=order[3], product_size=order[4])
                     total_price = total_price + product.get_prod_price()
                 return total_price
             except OperationalError as err:
@@ -525,8 +547,9 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"insert into `order_log` (`order_no`,`invoice_no`,`phone_no`, `order_cat`, `order_stat`) " \
-                      f"values ({self.order_no},{self.invoice_no},{self.phone_number}, {self.category}, 'A')"
+                sql = f"insert into `order_log` (`order_no`,`invoice_no`,`phone_number`, `order_type`, `order_stat`) " \
+                      f"values ('{self.order_no}','{self.invoice_no}','{self.phone_number}', '{self.order_type}', 'A')"
+                print(sql)
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -541,9 +564,17 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"update order_log set {col_name} = {col_val} where " \
-                      f"order_id = (select max(order_id) from `order_log` where phone_number = {self.phone_number} " \
-                      f"and order_stat = 'A')"
+                # sql = f"update order_log set {col_name} = '{col_val}' where " \
+                #       f"order_id = (select max(order_id) from `order_log` where phone_number = '{self.phone_number}' " \
+                #       f"and order_stat = 'A')"
+                sql = f"UPDATE order_log AS ol1 "
+                f"JOIN ( "
+                f"    SELECT MAX(order_id) AS max_order_id "
+                f"    FROM order_log "
+                f"    WHERE phone_number = '{self.phone_number}' AND order_stat = 'A' "
+                f") AS ol2 ON ol1.order_id = ol2.max_order_id "
+                f"SET {col_name} = '{col_val}'"
+                print(sql)
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -558,8 +589,9 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"update `order_log` set order_stat = 'F' where phone_number = {self.phone_number} and " \
+                sql = f"update `order_log` set order_stat = 'F' where phone_number = '{self.phone_number}' and " \
                       f"order_stat = 'A'"
+                print(sql)
                 cursor.execute(sql)
                 cnx.commit()
             except OperationalError as err:
@@ -589,11 +621,12 @@ class Product:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                sql = f"select prod_price from `prod_table` where prod_type = {self.product_type} " \
-                      f"and prod_cat = {self.product_cat} " \
-                      f"and prod_sub_cat = {self.product_sub_cat} " \
+                sql = f"select prod_price from `prod_table` where prod_type = '{self.product_type}' " \
+                      f"and prod_cat = '{self.product_cat}' " \
+                      f"and prod_sub_cat = '{self.product_sub_cat}' " \
                       f"and prod_comp = {self.product_comp} " \
                       f"and prod_size = {self.product_size} "
+                print(sql)
                 cursor.execute(sql)
                 result = cursor.fetchone()
                 print(type(result))
