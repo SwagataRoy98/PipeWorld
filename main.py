@@ -22,6 +22,7 @@ db_name = os.environ.get('CLOUD_SQL_DATABASE_NAME')
 db_connection_name = os.environ.get('CLOUD_SQL_CONNECTION_NAME')
 db_host = os.environ.get('DB_HOST')
 token = os.environ.get('TOKEN')
+places_token = os.environ.get('PLACES_API_KEY')
 print(db_connection_name)
 phone_number_id = os.environ.get('PHONE_NUMBER_ID')
 messenger = WhatsApp(token=token, phone_number_id=phone_number_id)
@@ -87,14 +88,13 @@ def hook():
                             send_custom_interactive_message(messenger, cust, '0')
                             return 'OK', 200
                         else:
-
                             resp_id = '0B'
                             db_message_logger(cnx, message, resp_id, mobile)
                             messenger.send_message(
                                 f"Hi {cust.cust_name}!!! Welcome to Plumbing wala. "
-                                f"Please choose from the below options to continue", mobile)
+                                f"Please provide the address to continue", mobile)
                             print('Before Sending Custom Interactive Message')
-                            send_custom_interactive_message(messenger, cust, '0')
+
                             print('After Sending Custom Interactive Message')
                             return 'OK', 200
                     else:
@@ -103,12 +103,16 @@ def hook():
                         if res is not None:
                             if re.match('^4', res[0]):
                                 db_message_logger(cnx, message, '5', mobile)
-                                print(res[0]+'received quantity: '+ message)
+                                print(res[0]+'received quantity: ' + message)
                                 res = fetch_order_no(cust)
+                                order = Order(phone_number=cust.phone_number, cust=cust)
+                                order.update_order_line_details('order_qty', message)
                                 #order_type, order_cat, order_size, order_comp
                                 product = Product(product_type=res[2], product_cat=res[3], product_comp=res[5],
                                                   product_size=res[4])
-                                messenger.send_message(f"The Price of the product is {product.get_prod_price()}",
+                                messenger.send_message(f"Unit Price is {product.get_prod_price()} and "
+                                                       f"total price for this order line will be "
+                                                       f"{product.get_prod_price() * int(message)}",
                                                        mobile)
                                 print('Send product message')
                                 return 'OK', 200
@@ -135,7 +139,22 @@ def hook():
                 message = message_text
                 db_message_logger(cnx, message_text, resp_id, mobile)
                 send_custom_interactive_message(messenger, cust, resp_id, message)
-                # messenger.send_message(get_response(resp_id, message_text, cnx, cust), mobile)
+            elif message_type == "location":
+                message_location = messenger.get_location(data)
+                message_latitude = message_location["latitude"]
+                message_longitude = message_location["longitude"]
+                print("Location received from Whatsapp Location: %s, %s, %s", message_latitude, message_longitude)
+                full_address = get_places_details(message_latitude, message_longitude)
+                print("Address found from API: %s", full_address)
+                messenger.send_message(f"Location: {message_latitude}, {message_longitude}, \n {full_address}"
+                                       f"Your address is saved with us! Thanks, You can proceed now.", mobile)
+                print("Setting address for the customer with Phone Number "+cust.phone_number)
+                cust.set_address(cnx, address=full_address)
+                print('Address Set')
+                db_message_logger(cnx, full_address, 'AD', mobile)
+                print('Before sending CIM')
+                send_custom_interactive_message(messenger, cust, '0')
+                print('CIM sent')
             else:
                 messenger.send_message(f"Oops!! Only text and interactive message supported", mobile)
         else:
@@ -216,7 +235,7 @@ class Customer:
             try:
                 sql = "UPDATE Customer_Details SET cust_address = %s where phone_number = %s"
                 print(sql)
-                cursor.execute(sql, (self.address, self.mobile))
+                cursor.execute(sql, (self.address, self.phone_number))
             except OperationalError as err:
                 print(str(err))
                 return None
@@ -231,7 +250,7 @@ class Customer:
             try:
                 sql = "UPDATE Customer_Details SET company_name = %s where phone_number = %s"
                 print(sql)
-                cursor.execute(sql, (self.company_name, self.mobile))
+                cursor.execute(sql, (self.company_name, self.phone_number))
             except OperationalError as err:
                 print(str(err))
                 return None
@@ -691,6 +710,15 @@ class Product:
             except Exception as e:
                 print("Exception occurred : " + str(e))
                 return None
+
+
+def get_places_details(latitude, longitude):
+    nearby_search_url = f"https://maps.googleapis.com/maps/api/geocode/json?key={places_token}&latlng={latitude}," \
+                        f"{longitude}"
+    response = requests.get(nearby_search_url)
+    data = response.json()
+    formatted_address = data["results"][0]["formatted_address"]
+    return formatted_address
 
 
 if __name__ == '__main__':
