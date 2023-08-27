@@ -93,6 +93,9 @@ def hook():
                             messenger.send_message(
                                 f"Hi {cust.cust_name}!!! Welcome to Plumbing wala. "
                                 f"Please provide the address to continue", mobile)
+                            messenger.send_video(video='https://drive.google.com/file/d/1XH2aCa16fCYFIgs0pOZ3qE_'
+                                                       'uIFtux4sY/view?usp=drive_link', recipient_id=mobile,
+                                                 caption='Tutorial to Send address', link=False)
                             print('Before Sending Custom Interactive Message')
 
                             print('After Sending Custom Interactive Message')
