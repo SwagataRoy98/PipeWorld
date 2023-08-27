@@ -99,8 +99,19 @@ def hook():
                             return 'OK', 200
                     else:
                         res = get_prev_resp_id(cnx, mobile)
+                        print(res[0])
                         if res is not None:
-                            messenger.send_message("Hello World", mobile)
+                            if re.match('^4', res[0]):
+                                db_message_logger(cnx, message, '5', mobile)
+                                print(res[0]+'received quantity: '+ message)
+                                res = fetch_order_no(cust)
+                                #order_type, order_cat, order_size, order_comp
+                                product = Product(product_type=res[2], product_cat=res[3], product_comp=res[5],
+                                                  product_size=res[4])
+                                messenger.send_message(f"The Price of the product is {product.get_prod_price()}",
+                                                       mobile)
+                                print('Send product message')
+                                return 'OK', 200
                         else:
                             messenger.send_message(
                                 f"Hi {cust.cust_name},This is an automated whatsapp chatbot, please type Hi/HI/hi/hI to"
@@ -435,16 +446,57 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
                 }
             }
         }
-    elif re.match(r'^3', resp_id):
-        messenger.send_message("Please Enter the Quantity", cust.phone_number)
-        cnx = connect()
-        db_message_logger(cnx, message, "5A", cust.phone_number)
-        return None
+    elif resp_id == '3A':
+        order = Order(phone_number=cust.phone_number, cust=cust)
+        order.update_order_line_details('order_cat', message)
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": cust.phone_number,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "header": {
+                    "type": "text",
+                    "text": "Plumbing Wala"
+                },
+                "body": {
+                    "text": "Please choose from below sizes:"
+                },
+                "action": {
+                    "button": "Options",
+                    "sections": [
+                        {
+                            "title": "Category",
+                            "rows": [
+                                {
+                                    "id": "4A",
+                                    "title": "110MM X 3MTR"
+                                },
+                                {
+                                    "id": "4B",
+                                    "title": "75MM X 3MTR"
+                                }
+                                # {
+                                #     "id": "4A",
+                                #     "title": "110mm X 3MTR DS"
+                                # },
+                                # {
+                                #     "id": "4B",
+                                #     "title": "75mm X 3MTR DS"
+                                # }
+                            ]
+                        },
+                    ]
+                }
+            }
+        }
+
     elif resp_id == '4A' or resp_id == '4B' or resp_id == '4C' or resp_id == '4D':
+        order = Order(phone_number=cust.phone_number, cust=cust)
+        order.update_order_line_details('order_size', message)
         messenger.send_message("Please Enter the Quantity", cust.phone_number)
-        cnx = connect()
-        db_message_logger(cnx, message, "5A", cust.phone_number)
-        return None
+        print(resp_id)
     print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
     print('Request sent in send custom interactive message')
@@ -455,7 +507,7 @@ def fetch_order_no(cust):
     cnx = connect()
     with cnx.cursor() as cursor:
         try:
-            sql = "SELECT order_no, order_id  FROM `order_log` " \
+            sql = "SELECT order_no, order_id, order_type, order_cat, order_size, order_comp  FROM `order_log` " \
                   "WHERE phone_number = %s AND order_id = (select max(order_id) from `order_log` where " \
                   "phone_number = %s and order_stat = 'A')"
             print(sql)
@@ -475,7 +527,7 @@ def fetch_order_no(cust):
 def get_order_no(cnx):
     with cnx.cursor() as cursor:
         try:
-            sql = f"select max(order_id) from order_log where order_stat = 'F'"
+            sql = f"select max(order_id) from order_log "
             print(sql)
             cursor.execute(sql)
             result = cursor.fetchone()
@@ -524,7 +576,7 @@ class Order:
         with cnx.cursor() as cursor:
             try:
                 sql = f"select order_type, order_comp, order_cat, order_sub_cat, order_size from order_log " \
-                      f"where order_stat = 'A' and phone_number = {self.phone_number}"
+                      f"where order_stat = 'C' and phone_number = {self.phone_number}"
                 print(sql)
                 cursor.execute(sql)
                 orders = cursor.fetchall()
@@ -564,16 +616,19 @@ class Order:
         cnx = connect()
         with cnx.cursor() as cursor:
             try:
-                # sql = f"update order_log set {col_name} = '{col_val}' where " \
-                #       f"order_id = (select max(order_id) from `order_log` where phone_number = '{self.phone_number}' " \
-                #       f"and order_stat = 'A')"
-                sql = f"UPDATE order_log AS ol1 "
-                f"JOIN ( "
-                f"    SELECT MAX(order_id) AS max_order_id "
-                f"    FROM order_log "
-                f"    WHERE phone_number = '{self.phone_number}' AND order_stat = 'A' "
-                f") AS ol2 ON ol1.order_id = ol2.max_order_id "
-                f"SET {col_name} = '{col_val}'"
+                sql = f"select max(order_id) from `order_log` where phone_number = '{self.phone_number}' "\
+                        f"and order_stat = 'A'"
+                cursor.execute(sql)
+                result = cursor.fetchone()
+                sql = f"update order_log set {col_name} = '{col_val}' where " \
+                      f"order_id = {result[0]}"
+                # sql = f"UPDATE order_log AS ol1 "
+                # f"JOIN ( "
+                # f"    SELECT MAX(order_id) AS max_order_id "
+                # f"    FROM order_log "
+                # f"    WHERE phone_number = '{self.phone_number}' AND order_stat = 'A' "
+                # f") AS ol2 ON ol1.order_id = ol2.max_order_id "
+                # f"SET {col_name} = '{col_val}'"
                 print(sql)
                 cursor.execute(sql)
                 cnx.commit()
@@ -590,7 +645,7 @@ class Order:
         with cnx.cursor() as cursor:
             try:
                 sql = f"update `order_log` set order_stat = 'F' where phone_number = '{self.phone_number}' and " \
-                      f"order_stat = 'A'"
+                      f"order_stat = 'C'"
                 print(sql)
                 cursor.execute(sql)
                 cnx.commit()
@@ -610,11 +665,10 @@ class Product:
     product_sub_cat = None
     product_size = None
 
-    def __init__(self, product_type, product_cat, product_comp, product_sub_cat, product_size):
+    def __init__(self, product_type, product_cat, product_comp, product_size):
         self.product_type = product_type
         self.product_cat = product_cat
         self.product_comp = product_comp
-        self.product_sub_cat = product_sub_cat
         self.product_size = product_size
 
     def get_prod_price(self):
@@ -623,9 +677,8 @@ class Product:
             try:
                 sql = f"select prod_price from `prod_table` where prod_type = '{self.product_type}' " \
                       f"and prod_cat = '{self.product_cat}' " \
-                      f"and prod_sub_cat = '{self.product_sub_cat}' " \
-                      f"and prod_comp = {self.product_comp} " \
-                      f"and prod_size = {self.product_size} "
+                      f"and prod_comp = '{self.product_comp}' " \
+                      f"and prod_size = '{self.product_size}' "
                 print(sql)
                 cursor.execute(sql)
                 result = cursor.fetchone()
