@@ -107,17 +107,22 @@ def hook():
                             if re.match('^4', res[0]):
                                 db_message_logger(cnx, message, '5', mobile)
                                 print(res[0]+'received quantity: ' + message)
-                                res = fetch_order_no(cust)
+                                quote_line = fetch_order_no(cust)
                                 order = Order(phone_number=cust.phone_number, cust=cust)
                                 order.update_order_line_details('order_qty', message)
                                 #order_type, order_cat, order_size, order_comp
-                                product = Product(product_type=res[2], product_cat=res[3], product_comp=res[5],
-                                                  product_size=res[4])
-                                messenger.send_message(f"Unit Price is {product.get_prod_price()} and "
-                                                       f"total price for this order line will be "
-                                                       f"{product.get_prod_price() * int(message)}",
+                                product = Product(product_type=quote_line[2], product_cat=quote_line[3],
+                                                  product_comp=quote_line[5], product_size=quote_line[4])
+                                report_out = f"Unit Price is {product.get_prod_price()} and " \
+                                             f"total price for this order line will be " \
+                                             f"{product.get_prod_price() * int(message)}. \n "
+                                for item in quote_line:
+                                    report_out = report_out + item
+                                messenger.send_message(report_out,
                                                        mobile)
                                 print('Send product message')
+                                messenger.send_message(f"Would you like to Confirm the Purchase?", mobile)
+                                send_custom_interactive_message(messenger, cust, '6')
                                 return 'OK', 200
                         else:
                             messenger.send_message(
@@ -519,6 +524,50 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
         order.update_order_line_details('order_size', message)
         messenger.send_message("Please Enter the Quantity", cust.phone_number)
         print(resp_id)
+    elif resp_id == '6':
+        messenger.send_reply_button(
+            recipient_id=cust.phone_number,
+            button={
+                "type": "button",
+                "body": {
+                    "text": "Please choose your option"
+                },
+                "action": {
+                    "buttons": [
+                        {
+                            "type": "reply",
+                            "reply": {
+                                "id": "b1",
+                                "title": "Confirm and Buy another"
+                            }
+                        },
+                        {
+                            "type": "reply",
+                            "reply": {
+                                "id": "b2",
+                                "title": "Confirm and Checkout"
+                            }
+                        },
+                        {
+                            "type": "reply",
+                            "reply": {
+                                "id": "b3",
+                                "title": "Cancel this order"
+                            }
+                        }
+                    ]
+                }
+            },
+        )
+    elif re.match(r'^b', resp_id):
+        order = Order(phone_number=cust.phone_number, cust=cust)
+        order.update_order_line_details('order_stat', 'C')
+        if resp_id == 'b1':
+            send_custom_interactive_message(messenger, cust, '0')
+        elif resp_id == 'b2':
+            messenger.send_message('Thank you for your purchase.', cust.phone_number)
+        elif resp_id == 'b3':
+            messenger.send_message('')
     print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
     print('Request sent in send custom interactive message')
