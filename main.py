@@ -567,7 +567,7 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
         elif resp_id == 'b2':
             messenger.send_message('Thank you for your purchase.', cust.phone_number)
         elif resp_id == 'b3':
-            messenger.send_message('')
+            messenger.send_message('Going So soon')
     print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
     print('Request sent in send custom interactive message')
