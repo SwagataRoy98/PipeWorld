@@ -567,10 +567,12 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
         }
     elif re.match(r'^b', resp_id):
         order = Order(phone_number=cust.phone_number, cust=cust)
-        order.update_order_line_details('order_stat', 'C')
         if resp_id == 'b1':
+            order.update_order_line_details('order_stat', 'C')
             send_custom_interactive_message(messenger, cust, '0')
         elif resp_id == 'b2':
+            order.update_order_line_details('order_stat', 'C')
+            order.confirm_order()
             messenger.send_message('Thank you for your purchase.', cust.phone_number)
         elif resp_id == 'b3':
             messenger.send_message('Going So soon!!!')
