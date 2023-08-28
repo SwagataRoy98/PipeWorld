@@ -102,6 +102,7 @@ def hook():
                             return 'OK', 200
                     else:
                         res = get_prev_resp_id(cnx, mobile)
+                        print('tanmoy')
                         print(res[0])
                         if res is not None:
                             if re.match('^4', res[0]):
@@ -113,11 +114,13 @@ def hook():
                                 #order_type, order_cat, order_size, order_comp
                                 product = Product(product_type=quote_line[2], product_cat=quote_line[3],
                                                   product_comp=quote_line[5], product_size=quote_line[4])
+                                print('Sagu')
                                 report_out = f"Unit Price is {product.get_prod_price()} and " \
                                              f"total price for this order line will be " \
-                                             f"{product.get_prod_price() * int(message)}. \n "
-                                for item in quote_line:
-                                    report_out = report_out + item
+                                             f"{int(product.get_prod_price()) * int(message)}. \n "
+                                print('Polley')
+                                # for item in quote_line:
+                                #     report_out = report_out + item
                                 messenger.send_message(report_out,
                                                        mobile)
                                 print('Send product message')
@@ -525,12 +528,15 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
         messenger.send_message("Please Enter the Quantity", cust.phone_number)
         print(resp_id)
     elif resp_id == '6':
-        messenger.send_reply_button(
-            recipient_id=cust.phone_number,
-            button={
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": cust.phone_number,
+            "type": "interactive",
+            "interactive": {
                 "type": "button",
                 "body": {
-                    "text": "Please choose your option"
+                    "text": "Please Choose From The Below Options:"
                 },
                 "action": {
                     "buttons": [
@@ -538,7 +544,7 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
                             "type": "reply",
                             "reply": {
                                 "id": "b1",
-                                "title": "Confirm and Buy another"
+                                "title": "Confirm and Buy"
                             }
                         },
                         {
@@ -552,13 +558,13 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
                             "type": "reply",
                             "reply": {
                                 "id": "b3",
-                                "title": "Cancel this order"
+                                "title": "Cancel This Order"
                             }
                         }
                     ]
                 }
-            },
-        )
+            }
+        }
     elif re.match(r'^b', resp_id):
         order = Order(phone_number=cust.phone_number, cust=cust)
         order.update_order_line_details('order_stat', 'C')
@@ -567,7 +573,7 @@ def send_custom_interactive_message(messenger, cust, resp_id, message=None):
         elif resp_id == 'b2':
             messenger.send_message('Thank you for your purchase.', cust.phone_number)
         elif resp_id == 'b3':
-            messenger.send_message('Going So soon')
+            messenger.send_message('Going So soon!!!')
     print('Payload Prepared in send custom interactive message')
     requests.post(messenger.url, headers=messenger.headers, json=payload)
     print('Request sent in send custom interactive message')
@@ -581,6 +587,27 @@ def fetch_order_no(cust):
             sql = "SELECT order_no, order_id, order_type, order_cat, order_size, order_comp  FROM `order_log` " \
                   "WHERE phone_number = %s AND order_id = (select max(order_id) from `order_log` where " \
                   "phone_number = %s and order_stat = 'A')"
+            print(sql)
+            cursor.execute(sql, (cust.phone_number, cust.phone_number))
+            result = cursor.fetchone()
+            if result is None:
+                result = [get_order_no(cnx), '01']
+        except OperationalError as err:
+            print(str(err))
+            return None
+        except Exception as e:
+            print("Exception occurred : " + str(e))
+            return None
+        return result
+
+
+def fetch_prev_order_no(cust):
+    cnx = connect()
+    with cnx.cursor() as cursor:
+        try:
+            sql = "SELECT order_no, order_id FROM `order_log` " \
+                  "WHERE phone_number = %s AND order_id = (select max(order_id) from `order_log` where " \
+                  "phone_number = %s and order_stat = 'C')"
             print(sql)
             cursor.execute(sql, (cust.phone_number, cust.phone_number))
             result = cursor.fetchone()
@@ -635,7 +662,7 @@ class Order:
         self.order_type = order_type
         self.cust = cust
         cnx = connect()
-        prev_order = fetch_order_no(self.cust)
+        prev_order = fetch_prev_order_no(self.cust)
         if prev_order is None:
             self.order_no = get_order_no(cnx)
         else:
